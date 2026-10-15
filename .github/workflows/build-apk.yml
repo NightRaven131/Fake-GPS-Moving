@@ -1,0 +1,58 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag release yang berisi MockGpsRoute.zip (kosongkan kalau project sudah ada di repo)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ambil zip dari release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release download "$TAG" --pattern "MockGpsRoute.zip" --dir /tmp
+          unzip -q /tmp/MockGpsRoute.zip -d /tmp/src
+
+      - name: Cari folder project
+        id: proj
+        run: |
+          if [ -d /tmp/src ]; then
+            F=$(find /tmp/src -name settings.gradle.kts | head -n1)
+          else
+            F=$(find . -name settings.gradle.kts | head -n1)
+          fi
+          echo "dir=$(dirname "$F")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Terima lisensi SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Build debug APK
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MockGpsRoute-debug-apk
+          path: ${{ steps.proj.outputs.dir }}/app/build/outputs/apk/debug/*.apk
